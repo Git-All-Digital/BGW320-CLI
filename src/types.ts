@@ -5,6 +5,7 @@ export type RouterClientOptions = {
   insecureTls: boolean;
   userAgent: string;
   waitForSession?: boolean | undefined;
+  boundedLogin?: boolean | undefined;
   sessionWaitTimeoutMs?: number | undefined;
   sessionWaitIntervalMs?: number | undefined;
   onSessionWait?: ((event: { waitedMs: number; retryCount: number; timeoutMs: number; intervalMs: number }) => void) | undefined;

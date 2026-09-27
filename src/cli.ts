@@ -50,6 +50,7 @@ async function main(argv: string[]): Promise<void> {
     insecureTls: command.options.insecureTls,
     userAgent: "bgw/0.1.0",
     waitForSession: command.options.waitForSession,
+    boundedLogin: command.options.boundedLogin,
     sessionWaitTimeoutMs: command.options.sessionWaitTimeoutMs,
     sessionWaitIntervalMs: command.options.sessionWaitIntervalMs,
     onSessionWait: command.options.json ? undefined : (event) => {

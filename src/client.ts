@@ -36,6 +36,7 @@ export class BGW320Client {
   private readonly options: RouterClientOptions;
   private readonly cookies = new Map<string, string>();
   private authenticated = false;
+  private loginStarted = false;
 
   constructor(options: RouterClientOptions) {
     const host = options.host.replace(/\/+$/, "");
@@ -137,7 +138,20 @@ export class BGW320Client {
       throw new RouterAuthError("Access code required. Set BGW_ACCESS_CODE or pass --access-code-stdin.");
     }
 
+    if (this.options.boundedLogin && this.loginStarted) {
+      throw new RouterAuthError("Bounded login already attempted for this client; refusing reauthentication.");
+    }
+    this.loginStarted = true;
+
     let nonce: string | undefined = initialLoginHtml ? extractNonce(initialLoginHtml) : undefined;
+    if (this.options.boundedLogin) {
+      const html = initialLoginHtml ?? (await this.request("/cgi-bin/login.ha", {
+        method: "GET", followRedirects: false,
+      })).body;
+      if (routerSessionsFull(html)) throw new RouterSessionPoolFullError();
+      nonce = extractNonce(html);
+      if (!nonce) throw new RouterAuthError("Bounded login received no nonce; no retry performed.");
+    }
     if (!nonce && initialLoginHtml && routerSessionsFull(initialLoginHtml)) {
       nonce = await this.waitForSessionNonce();
     }
@@ -184,8 +198,15 @@ export class BGW320Client {
     });
 
     if (response.statusCode === 302 && /\/cgi-bin\/home\.ha/i.test(String(response.headers.location ?? ""))) {
+      if (this.options.boundedLogin && this.cookies.size === 0) {
+        throw new RouterAuthError("Bounded login received no session cookie.");
+      }
       this.authenticated = true;
       return;
+    }
+
+    if (this.options.boundedLogin) {
+      throw new RouterAuthError("Bounded login received an unexpected response; no retry performed.");
     }
 
     if (looksLikeLogin(response.body) || /Login Failed|Access Code Required/i.test(response.body)) {

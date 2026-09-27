@@ -245,6 +245,13 @@ the persistent session-pool cooldown remain enabled. This is not server-side
 logout or guaranteed memory zeroization. Prefer a single paced operation over
 repeated logins, because memory-only mode does not reuse sessions across commands.
 
+For a bounded qualification run, set `BGW_BOUNDED_LOGIN=1`. Each client permits
+one login attempt, using an existing page nonce or one login-page GET. Missing
+nonce, full session pool, an unexpected login response, or a later login
+challenge stops the operation instead of retrying. This mode overrides session
+waiting and expects the gateway's usual home redirect with a session cookie.
+It can be combined with memory-only sessions; neither setting authorizes writes.
+
 ## Router Fixture Pack
 
 Parser ground truth belongs under:

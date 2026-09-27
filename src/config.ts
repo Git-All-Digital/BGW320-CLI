@@ -9,6 +9,7 @@ export type GlobalOptions = {
   timeoutMs: number;
   insecureTls: boolean;
   waitForSession: boolean;
+  boundedLogin: boolean;
   sessionWaitTimeoutMs: number;
   sessionWaitIntervalMs: number;
   sessionCacheTtlMs: number;
@@ -37,6 +38,7 @@ export function envDefaultOptions(): GlobalOptions {
     timeoutMs: envNumber("BGW_TIMEOUT_MS", 15000, 1),
     insecureTls: process.env.BGW_INSECURE_TLS !== "0",
     waitForSession: process.env.BGW_WAIT_FOR_SESSION === "1",
+    boundedLogin: process.env.BGW_BOUNDED_LOGIN === "1",
     sessionWaitTimeoutMs: envNumber("BGW_SESSION_WAIT_TIMEOUT_MS", 120000, 0),
     sessionWaitIntervalMs: envNumber("BGW_SESSION_WAIT_INTERVAL_MS", 10000, 1),
     sessionCacheTtlMs: envNumber("BGW_SESSION_CACHE_TTL_MS", 120000, 0),

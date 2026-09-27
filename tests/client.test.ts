@@ -1,6 +1,65 @@
 import { expect, test } from "bun:test";
 import { BGW320Client, RouterAuthError, RouterConnectionError, RouterResponseError, RouterSessionPoolFullError } from "../src/client.js";
 
+test("bounded login reads two pages using one authentication", async () => {
+  let posts = 0;
+  await withFetch(async (url, init) => {
+    if (init?.method === "POST") {
+      posts += 1;
+      return htmlResponse("", { status: 302, headers: { location: "/cgi-bin/home.ha", "set-cookie": "sid=synthetic; Path=/" } });
+    }
+    return htmlResponse(String(url).endsWith("login.ha") ? loginNonceHtml("abc123") : "<title>Status</title>");
+  }, async () => {
+    const client = testClient({ boundedLogin: true });
+    await client.login();
+    await client.getCgiPage("remoteaccess");
+    await client.getCgiPage("syslog");
+  });
+  expect(posts).toBe(1);
+});
+
+test("bounded login stops on a later session challenge without another POST", async () => {
+  let posts = 0;
+  await withFetch(async (url, init) => {
+    if (init?.method === "POST") {
+      posts += 1;
+      return htmlResponse("", { status: 302, headers: { location: "/cgi-bin/home.ha", "set-cookie": "sid=synthetic; Path=/" } });
+    }
+    return htmlResponse(String(url).endsWith("remoteaccess.ha") ? "<title>Status</title>" : loginNonceHtml("abc123"));
+  }, async () => {
+    const client = testClient({ boundedLogin: true });
+    await client.login();
+    await client.getCgiPage("remoteaccess");
+    await expect(client.getCgiPage("syslog")).rejects.toBeInstanceOf(RouterAuthError);
+  });
+  expect(posts).toBe(1);
+});
+
+test("bounded login does not retry a missing nonce", async () => {
+  let calls = 0;
+  await withFetch(async () => {
+    calls += 1;
+    return htmlResponse("<title>Unavailable</title>");
+  }, async () => {
+    const client = testClient({ boundedLogin: true });
+    await expect(client.login()).rejects.toBeInstanceOf(RouterAuthError);
+    await expect(client.login()).rejects.toBeInstanceOf(RouterAuthError);
+  });
+  expect(calls).toBe(1);
+});
+
+test("bounded login does not wait on a full session pool", async () => {
+  let calls = 0;
+  await withFetch(async () => {
+    calls += 1;
+    return htmlResponse("<title>Login</title><p>all web server sessions are in use</p>");
+  }, async () => {
+    const client = testClient({ boundedLogin: true, waitForSession: true });
+    await expect(client.login()).rejects.toBeInstanceOf(RouterSessionPoolFullError);
+  });
+  expect(calls).toBe(1);
+});
+
 test("session-pool-full fails fast by default", async () => {
   const calls: string[] = [];
   await withFetch(async (url) => {
