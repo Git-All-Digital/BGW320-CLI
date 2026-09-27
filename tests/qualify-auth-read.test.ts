@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { qualifyAuthenticatedRead } from "../scripts/qualify-auth-read.js";
+import { qualifyAuthenticatedRead, QualificationStopped } from "../scripts/qualify-auth-read.js";
 
 async function runFixture(firstPage: () => Response | Promise<Response>) {
   const originalFetch = globalThis.fetch;
@@ -24,8 +24,9 @@ async function runFixture(firstPage: () => Response | Promise<Response>) {
     try {
       const result = await qualifyAuthenticatedRead("http://router.local", "synthetic");
       return { calls, result, failed: false };
-    } catch {
-      return { calls, failed: true, result: undefined };
+    } catch (error) {
+      return { calls, failed: true, result: undefined,
+        diagnostic: error instanceof QualificationStopped ? error.summary : undefined };
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -59,4 +60,13 @@ test("qualification stops before second page on timeout", async () => {
   const run = await runFixture(() => { throw new DOMException("Timed out", "AbortError"); });
   expect(run.failed).toBe(true);
   expect(run.calls).toHaveLength(3);
+  expect(run.diagnostic).toEqual({ status: "STOPPED", category: "qualification",
+    phase: "GET /cgi-bin/remoteaccess.ha", loginPostAttempts: 1,
+    configurationPosts: 0, lastResponseStatus: null });
+});
+
+test("qualification diagnostics omit response content and exception messages", async () => {
+  const run = await runFixture(() => { throw new Error("secret-synthetic-value"); });
+  expect(JSON.stringify(run.diagnostic)).not.toContain("secret-synthetic-value");
+  expect(run.diagnostic?.loginPostAttempts).toBe(1);
 });

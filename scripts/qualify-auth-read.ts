@@ -2,6 +2,15 @@ import { BGW320Client, RouterAuthError, RouterResponseError } from "../src/clien
 import { parsePage } from "../src/parser.js";
 import { withRouterSession } from "../src/session.js";
 
+export class QualificationStopped extends Error {
+  constructor(readonly summary: {
+    status: string; category: string; phase: string; loginPostAttempts: number;
+    configurationPosts: number; lastResponseStatus: number | null;
+  }) {
+    super("Qualification stopped; sanitized diagnostics only.");
+  }
+}
+
 // A deliberately narrow qualification entrypoint, not a general command runner.
 export async function qualifyAuthenticatedRead(host: string, accessCode: string) {
   const origin = new URL(host).origin;
@@ -11,6 +20,8 @@ export async function qualifyAuthenticatedRead(host: string, accessCode: string)
     userAgent: "bgw-bounded-read/1" });
   const originalFetch = globalThis.fetch;
   const counts = new Map<string, number>();
+  let phase = "session_lock";
+  let lastResponseStatus: number | null = null;
   const limits = new Map([
     ["GET /cgi-bin/login.ha", 1], ["POST /cgi-bin/login.ha", 1],
     ["GET /cgi-bin/remoteaccess.ha", 1], ["GET /cgi-bin/syslog.ha", 1],
@@ -26,7 +37,10 @@ export async function qualifyAuthenticatedRead(host: string, accessCode: string)
     const count = (counts.get(key) ?? 0) + 1;
     if (count > limit) throw new RouterResponseError("Qualification request budget exhausted.");
     counts.set(key, count);
+    phase = key;
+    lastResponseStatus = null;
     const response = await originalFetch(input, { ...init, redirect: "manual" });
+    lastResponseStatus = response.status;
     if (method === "GET" && response.status !== 200) {
       await response.body?.cancel();
       throw new RouterResponseError("Qualification GET status unexpected; redirect not followed.");
@@ -52,6 +66,11 @@ export async function qualifyAuthenticatedRead(host: string, accessCode: string)
         loginPosts: counts.get("POST /cgi-bin/login.ha") ?? 0,
         configurationPosts: 0, requestCounts: Object.fromEntries(counts) };
     });
+  } catch (error) {
+    throw new QualificationStopped({ status: "STOPPED",
+      category: error instanceof RouterAuthError ? "authentication" : "qualification",
+      phase, loginPostAttempts: counts.get("POST /cgi-bin/login.ha") ?? 0,
+      configurationPosts: 0, lastResponseStatus });
   } finally {
     client.clearSession();
     globalThis.fetch = originalFetch;
@@ -66,9 +85,9 @@ if (import.meta.main) {
     )));
   } catch (error) {
     // Never emit transport messages, page bodies, cookies, or credential values.
-    console.log(JSON.stringify({ status: "STOPPED",
-      category: error instanceof RouterAuthError ? "authentication" : "qualification",
-      configurationPosts: 0 }));
+    console.log(JSON.stringify(error instanceof QualificationStopped ? error.summary : {
+      status: "STOPPED", category: "input", phase: "input",
+      loginPostAttempts: 0, configurationPosts: 0, lastResponseStatus: null }));
     process.exitCode = 2;
   }
 }
